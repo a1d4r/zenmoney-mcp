@@ -491,20 +491,29 @@ impl<S: Storage + 'static> ZenMoneyMcpServer<S> {
     }
 
     /// Builds lookup maps from current storage for enriching responses.
+    #[tracing::instrument(level = "debug", skip(self))]
     async fn lookup_maps(&self) -> Result<LookupMaps, McpError> {
         let accounts = self.client.accounts().await.map_err(zen_err)?;
         let tags = self.client.tags().await.map_err(zen_err)?;
         let instruments = self.client.instruments().await.map_err(zen_err)?;
+        tracing::debug!(
+            accounts = accounts.len(),
+            tags = tags.len(),
+            instruments = instruments.len(),
+            "lookup maps built"
+        );
         Ok(build_lookup_maps(&accounts, &tags, &instruments))
     }
 
     /// Returns the first synced user ID, or `0` when local storage has no users.
+    #[tracing::instrument(level = "debug", skip(self))]
     async fn current_user_id(&self) -> Result<i64, McpError> {
         let users = self.client.users().await.map_err(zen_err)?;
         Ok(users.first().map_or(0, |user| user.id.into_inner()))
     }
 
     /// Shared implementation for `create_tag` and `create_category`.
+    #[tracing::instrument(level = "info", skip(self), fields(title = %params.title))]
     async fn create_tag_internal(
         &self,
         params: CreateTagParams,
@@ -540,8 +549,14 @@ impl<S: Storage + 'static> ZenMoneyMcpServer<S> {
     #[tool(
         description = "Perform an incremental sync with the ZenMoney server, fetching only changes since the last sync"
     )]
+    #[tracing::instrument(level = "info", skip(self))]
     async fn sync(&self) -> Result<CallToolResult, McpError> {
+        let started = std::time::Instant::now();
         let _response = self.client.sync().await.map_err(zen_err)?;
+        tracing::info!(
+            duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "incremental sync complete"
+        );
         Ok(CallToolResult::success(vec![Content::text(
             "Sync completed successfully",
         )]))
@@ -551,8 +566,14 @@ impl<S: Storage + 'static> ZenMoneyMcpServer<S> {
     #[tool(
         description = "Perform a full sync, clearing all local data and re-downloading everything from the ZenMoney server"
     )]
+    #[tracing::instrument(level = "info", skip(self))]
     async fn full_sync(&self) -> Result<CallToolResult, McpError> {
+        let started = std::time::Instant::now();
         let _response = self.client.full_sync().await.map_err(zen_err)?;
+        tracing::info!(
+            duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "full sync complete"
+        );
         Ok(CallToolResult::success(vec![Content::text(
             "Full sync completed successfully",
         )]))
